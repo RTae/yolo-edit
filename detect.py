@@ -1,9 +1,6 @@
-from pathlib import Path
-
 import cv2
 import torch
 from numpy import random
-import torch.backends.cudnn as cudnn
 
 from utils.plots import plot_one_box
 from utils.datasets import LoadImages
