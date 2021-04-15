@@ -1,17 +1,18 @@
 import cv2
 import torch
+import numpy as np
 from numpy import random
 
 from utils.plots import plot_one_box
-from utils.datasets import LoadImages
+from utils.datasets import letterbox
 from models.experimental import attempt_load
 from utils.torch_utils import select_device
 from utils.general import check_img_size, non_max_suppression, scale_coords, xyxy2xywh
 
-
-def detect(source, save):
+def detect(img_origin, path):
 
     weights = "./weights/best.pt"
+    save = "../dataset/wood-plank-1/result"
     imgsz = 416
     conf_thres = 0.45
     iou_thres = 0.25
@@ -27,10 +28,6 @@ def detect(source, save):
     if half:
         model.half()  # to FP16
 
-    # Set Dataloader
-    vid_path, vid_writer = None, None
-    dataset = LoadImages(source, img_size=imgsz, stride=stride)
-
     # Get names and colors
     names = model.module.names if hasattr(model, 'module') else model.names
     colors = [[random.randint(0, 255) for _ in range(3)] for _ in names]
@@ -39,38 +36,46 @@ def detect(source, save):
     if device.type != 'cpu':
         model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
 
-    for path, img, im0s in dataset:
+    # get images
+    img = letterbox(img_origin, imgsz, stride)[0]
 
-        img = torch.from_numpy(img).to(device)
-        img = img.half() if half else img.float()  # uint8 to fp16/32
-        img /= 255.0  # 0 - 255 to 0.0 - 1.0
-        if img.ndimension() == 3:
-            img = img.unsqueeze(0)
+    # Convert
+    img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+    img = np.ascontiguousarray(img)
 
-        # Inference
-        pred = model(img)[0]
+    # Prepare image
+    img = torch.from_numpy(img).to(device)
+    img = img.half() if half else img.float()  # uint8 to fp16/32
+    img /= 255.0  # 0 - 255 to 0.0 - 1.0
+    if img.ndimension() == 3:
+        img = img.unsqueeze(0)
 
-        # Apply NMS
-        pred = non_max_suppression(pred, conf_thres, iou_thres)
-    
-        # Process detections
-        for i, det in enumerate(pred):  # detections per image
-            im0 = im0s
-            img_name = path.split("/")[-1]
+    # Inference
+    pred = model(img)[0]
 
-            save_path = f"{save}/result_{img_name}"  # img.jpg
-            print("")
-            
-            if len(det):
-                # Rescale boxes from img_size to im0 size
-                det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+    # Apply NMS
+    pred = non_max_suppression(pred, conf_thres, iou_thres)
 
-                # Write results
-                for *xyxy, conf, cls in reversed(det):
-                    label = f'{names[int(cls)]} {conf:.2f}'
-                    print(label)
-                    plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
-            
-            cv2.imwrite(save_path, im0)
+    # Process detections
+    for i, det in enumerate(pred):  # detections per image
+        im0 = img_origin
+        img_name = path.split("/")[-1]
 
-detect("../dataset/wood-plank-1/test", "../dataset/wood-plank-1/result")
+        save_path = f"{save}/result_{img_name}"  # img.jpg
+        
+        if len(det):
+            # Rescale boxes from img_size to im0 size
+            det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+
+            # Write results
+            for *xyxy, conf, cls in reversed(det):
+                label = f'{names[int(cls)]} {conf:.2f}'
+                print(label)
+                plot_one_box(xyxy, im0, label=label, color=colors[int(cls)], line_thickness=3)
+        
+        cv2.imwrite(save_path, im0)
+
+path = "../dataset/wood-plank-1/test/test11.png"
+img = cv2.imread(path)  # BGR
+
+detect(img, path)
